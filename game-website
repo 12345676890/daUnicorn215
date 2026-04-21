@@ -1,0 +1,117 @@
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+app.use(helmet());
+
+// Routes
+app.use("/api/games", require("./services/games.service"));
+app.use("/api/users", require("./services/users.service"));
+app.use("/api/admin", require("./services/admin.service"));
+app.use("/api/analytics", require("./services/analytics.service"));
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", uptime: process.uptime() });
+});
+
+app.listen(process.env.PORT || 3000);
+const router = require("express").Router();
+const Game = require("../models/Game");
+
+// GET all games (cached later)
+router.get("/", async (req, res) => {
+  const games = await Game.find();
+  res.json(games);
+});
+
+// CREATE game (admin only later)
+router.post("/", async (req, res) => {
+  const game = new Game(req.body);
+  await game.save();
+  res.json(game);
+});
+
+// TRACK PLAY (analytics hook)
+router.post("/:id/play", async (req, res) => {
+  const game = await Game.findById(req.params.id);
+  game.plays++;
+  await game.save();
+
+  // send event to analytics service (future)
+  res.json({ success: true });
+});
+
+module.exports = router;
+const redis = require("redis");
+const client = redis.createClient({ url: process.env.REDIS_URL });
+
+client.connect();
+
+// cache trending games
+async function getTrending() {
+  const cached = await client.get("trending");
+  if (cached) return JSON.parse(cached);
+
+  const data = await Game.find().sort({ plays: -1 }).limit(10);
+
+  await client.set("trending", JSON.stringify(data), { EX: 60 });
+  return data;
+}
+const jwt = require("jsonwebtoken");
+
+function auth(req, res, next) {
+  const token = req.headers.authorization;
+
+  if (!token) return res.status(401).send("No token");
+
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch {
+    res.status(403).send("Invalid token");
+  }
+}
+
+module.exports = auth;
+const router = require("express").Router();
+
+// receive game play events
+router.post("/event", async (req, res) => {
+  const { gameId, userId } = req.body;
+
+  // store event (later → Kafka / queue system)
+  console.log("Play event:", gameId);
+
+  res.json({ ok: true });
+});
+
+module.exports = router;
+// admin only route
+router.post("/game", async (req, res) => {
+  const { name, url, tags } = req.body;
+
+  const game = await Game.create({ name, url, tags });
+  res.json(game);
+});
+src/
+ ├── pages/
+ │     ├── Home.jsx
+ │     ├── GamePage.jsx
+ │     ├── Admin.jsx
+ ├── components/
+ │     ├── GameCard.jsx
+ │     ├── Navbar.jsx
+ ├── api/
+ │     ├── games.js
+export default function GameCard({ game }) {
+  return (
+    <div onClick={() => window.open(game.url)} className="card">
+      <img src={game.img} />
+      <h3>{game.name}</h3>
+    </div>
+  );
+}
